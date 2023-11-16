@@ -29,7 +29,7 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(|| {
         actix_web::App::new()
-            .route("/", actix_web::web::get().to(|| async { "Hello, world!" }))
+            .configure(|cfg| tail::app_config(cfg))
     })
     .bind((config.server.ip, config.server.port))?
     .run()
