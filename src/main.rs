@@ -1,8 +1,10 @@
 use actix_web::HttpServer;
-use log::{debug, info};
+use log::{debug, error, info};
 use env_logger::Env;
 use clap::Parser;
-use tail::config::config::load;
+use sea_orm::{Database, DatabaseConnection, DbErr};
+use migration::{Migrator, MigratorTrait};
+use tail::config::config::{Data, load};
 
 #[derive(Debug, Parser)]
 pub struct CliArgs {
@@ -27,11 +29,38 @@ async fn main() -> std::io::Result<()> {
 
     info!("Starting server at http://{}:{}", config.server.ip, config.server.port);
 
+    let conn = connect_to_database(&config).await;
+
     HttpServer::new(|| {
         actix_web::App::new()
+            .wrap(actix_web::middleware::Logger::default())
             .configure(|cfg| tail::app_config(cfg))
     })
-    .bind((config.server.ip, config.server.port))?
-    .run()
-    .await
+        .bind((config.server.ip, config.server.port))?
+        .run()
+        .await
+}
+
+async fn connect_to_database(config: &Data) -> DatabaseConnection {
+    let conn = match Database::connect(&config.database_url).await {
+        Ok(c) => c,
+        Err(error) => {
+            error!("Unable to connect to database");
+            error!("Error: {}", error);
+            std::process::exit(1);
+        }
+    };
+
+    match Migrator::up(&conn, None).await {
+        Ok(_) => {
+            debug!("Successfully migrated database");
+        }
+        Err(error) => {
+            error!("Unable to migrate database");
+            error!("Error: {}", error);
+            std::process::exit(1);
+        }
+    };
+
+    conn
 }
